@@ -68,6 +68,21 @@ namespace esp32wifiuart {
     }
 
     /**
+     * ESP32가 접속할 서버의 IP 주소를 설정합니다.
+     * IP 주소는 ESP32 내부 메모리에 저장됩니다.
+     *
+     * @param ip 서버 IP 주소
+     */
+    //% blockId=esp32wifiuart_set_server_ip
+    //% block="서버 IP 설정 %ip"
+    //% ip.defl="192.168.0.81"
+    //% weight=65
+    export function setServerIP(ip: string): void {
+        serial.writeLine("SERVER_IP:" + ip)
+        basic.pause(150)
+    }
+
+    /**
      * ESP32에 Wi-Fi 연결 명령을 보냅니다.
      */
     //% blockId=esp32wifiuart_connect_wifi
@@ -93,6 +108,32 @@ namespace esp32wifiuart {
         basic.pause(200)
 
         serial.writeLine("PASSWORD:" + password)
+        basic.pause(200)
+
+        serial.writeLine("CONNECT")
+    }
+
+    /**
+     * SSID, 비밀번호, 서버 IP를 한 번에 전달하고 연결합니다.
+     *
+     * @param ssid Wi-Fi 이름
+     * @param password Wi-Fi 비밀번호
+     * @param ip 접속할 서버 IP 주소
+     */
+    //% blockId=esp32wifiuart_setup_wifi_server
+    //% block="WiFi와 서버 연결 SSID %ssid 비밀번호 %password 서버 IP %ip"
+    //% ssid.defl="aicampus_286"
+    //% password.defl="password"
+    //% ip.defl="192.168.0.81"
+    //% weight=84
+    export function setupWiFiAndServer(ssid: string, password: string, ip: string): void {
+        serial.writeLine("SSID:" + ssid)
+        basic.pause(200)
+
+        serial.writeLine("PASSWORD:" + password)
+        basic.pause(200)
+
+        serial.writeLine("SERVER_IP:" + ip)
         basic.pause(200)
 
         serial.writeLine("CONNECT")
