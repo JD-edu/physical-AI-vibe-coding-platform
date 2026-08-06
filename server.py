@@ -3,7 +3,8 @@ from flask import (
     request,
     render_template_string,
     redirect,
-    url_for
+    url_for,
+    jsonify
 )
 from datetime import datetime
 from threading import Lock, Thread
@@ -83,8 +84,9 @@ HTML_PAGE = """
             padding: 20px;
             border-radius: 10px;
             background-color: #e8f5e9;
-            font-size: 24px;
+            font-size: 36px;
             font-weight: bold;
+            text-align: center;
             word-break: break-all;
         }
 
@@ -95,6 +97,7 @@ HTML_PAGE = """
             font-size: 36px;
             font-weight: bold;
             text-align: center;
+            word-break: break-all;
         }
 
         form {
@@ -105,6 +108,7 @@ HTML_PAGE = """
 
         input {
             flex: 1;
+            min-width: 0;
             padding: 14px;
             border: 1px solid #cccccc;
             border-radius: 8px;
@@ -121,6 +125,10 @@ HTML_PAGE = """
             cursor: pointer;
         }
 
+        button:hover {
+            background-color: #0d47a1;
+        }
+
         .time {
             margin-top: 10px;
             color: #555555;
@@ -130,6 +138,12 @@ HTML_PAGE = """
             margin-top: 10px;
             color: #1565c0;
             font-weight: bold;
+        }
+
+        .update-status {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #777777;
         }
 
         table {
@@ -147,6 +161,28 @@ HTML_PAGE = """
         th {
             background-color: #eeeeee;
         }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                margin: 10px auto;
+            }
+
+            .card {
+                padding: 18px;
+            }
+
+            form {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 
@@ -158,17 +194,25 @@ HTML_PAGE = """
         <div class="card">
             <h2>마이크로비트로 문자 보내기</h2>
 
-            <div class="command-box">
+            <div
+                class="command-box"
+                id="latest-command"
+            >
                 {{ latest_command }}
             </div>
 
             <div class="time">
-                전송 시간: {{ latest_command_time }}
+                전송 시간:
+                <span id="latest-command-time">
+                    {{ latest_command_time }}
+                </span>
             </div>
 
             <div class="status">
                 연결된 ESP32:
-                {{ connected_clients }}대
+                <span id="connected-clients">
+                    {{ connected_clients }}
+                </span>대
             </div>
 
             <form
@@ -193,12 +237,25 @@ HTML_PAGE = """
         <div class="card">
             <h2>마이크로비트에서 받은 데이터</h2>
 
-            <div class="value-box">
+            <div
+                class="value-box"
+                id="latest-message"
+            >
                 {{ latest_message }}
             </div>
 
             <div class="time">
-                수신 시간: {{ latest_time }}
+                수신 시간:
+                <span id="latest-time">
+                    {{ latest_time }}
+                </span>
+            </div>
+
+            <div
+                class="update-status"
+                id="update-status"
+            >
+                자동 업데이트 준비 중
             </div>
         </div>
 
@@ -213,7 +270,7 @@ HTML_PAGE = """
                     </tr>
                 </thead>
 
-                <tbody>
+                <tbody id="history-body">
                     {% for item in message_history %}
                     <tr>
                         <td>{{ item.time }}</td>
@@ -225,6 +282,109 @@ HTML_PAGE = """
         </div>
 
     </div>
+
+    <script>
+        async function updateStatus() {
+            const updateStatusElement =
+                document.getElementById("update-status");
+
+            try {
+                const response = await fetch(
+                    "/api/status",
+                    {
+                        method: "GET",
+                        cache: "no-store"
+                    }
+                );
+
+                if (!response.ok) {
+                    throw new Error(
+                        "HTTP 오류: " + response.status
+                    );
+                }
+
+                const data = await response.json();
+
+                document.getElementById(
+                    "latest-message"
+                ).textContent = data.latest_message;
+
+                document.getElementById(
+                    "latest-time"
+                ).textContent = data.latest_time;
+
+                document.getElementById(
+                    "latest-command"
+                ).textContent = data.latest_command;
+
+                document.getElementById(
+                    "latest-command-time"
+                ).textContent =
+                    data.latest_command_time;
+
+                document.getElementById(
+                    "connected-clients"
+                ).textContent =
+                    data.connected_clients;
+
+                const historyBody =
+                    document.getElementById(
+                        "history-body"
+                    );
+
+                historyBody.innerHTML = "";
+
+                data.message_history.forEach(
+                    function(item) {
+                        const row =
+                            document.createElement("tr");
+
+                        const timeCell =
+                            document.createElement("td");
+
+                        const messageCell =
+                            document.createElement("td");
+
+                        timeCell.textContent = item.time;
+                        messageCell.textContent =
+                            item.message;
+
+                        row.appendChild(timeCell);
+                        row.appendChild(messageCell);
+
+                        historyBody.appendChild(row);
+                    }
+                );
+
+                const now = new Date();
+
+                updateStatusElement.textContent =
+                    "자동 업데이트 정상 · " +
+                    now.toLocaleTimeString();
+
+                updateStatusElement.style.color =
+                    "#2e7d32";
+
+            } catch (error) {
+                console.error(
+                    "자동 업데이트 실패:",
+                    error
+                );
+
+                updateStatusElement.textContent =
+                    "자동 업데이트 실패 · 서버 연결 확인";
+
+                updateStatusElement.style.color =
+                    "#c62828";
+            }
+        }
+
+        // 페이지가 열리면 즉시 최신 데이터 요청
+        updateStatus();
+
+        // 1초마다 서버의 최신 데이터 요청
+        setInterval(updateStatus, 1000);
+    </script>
 </body>
 </html>
 """
@@ -237,6 +397,7 @@ def get_client_count():
     with clients_lock:
         return len(esp32_clients)
 
+
 # ==================================================
 # ESP32에 명령 전송
 # ==================================================
@@ -248,13 +409,14 @@ def broadcast_command(command):
     """
 
     packet = (command + "\n").encode("utf-8")
-
     disconnected_clients = []
+    sent_count = 0
 
     with clients_lock:
         for client_socket in esp32_clients:
             try:
                 client_socket.sendall(packet)
+                sent_count += 1
 
             except (ConnectionError, OSError):
                 disconnected_clients.append(
@@ -272,10 +434,8 @@ def broadcast_command(command):
             except OSError:
                 pass
 
-    return (
-        len(esp32_clients),
-        len(disconnected_clients)
-    )
+    return sent_count, len(disconnected_clients)
+
 
 # ==================================================
 # ESP32 TCP 연결 처리
@@ -290,13 +450,26 @@ def handle_esp32_client(
         client_address
     )
 
+    # 끊어진 연결을 비교적 빠르게 감지
+    client_socket.settimeout(60)
+
     with clients_lock:
         esp32_clients.append(client_socket)
 
     try:
         while True:
-            # ESP32의 연결 상태와 초기 메시지 확인
-            data = client_socket.recv(1024)
+            try:
+                data = client_socket.recv(1024)
+
+            except socket.timeout:
+                # ESP32가 계속 연결되어 있는지 확인하기 위해
+                # 빈 줄을 보내 연결 상태를 검사합니다.
+                try:
+                    client_socket.sendall(b"\n")
+                    continue
+
+                except (ConnectionError, OSError):
+                    break
 
             if not data:
                 break
@@ -332,6 +505,7 @@ def handle_esp32_client(
             "ESP32 TCP 연결 종료:",
             client_address
         )
+
 
 # ==================================================
 # TCP 서버 실행
@@ -376,6 +550,7 @@ def run_tcp_server():
 
         client_thread.start()
 
+
 # ==================================================
 # 메인 웹페이지
 # ==================================================
@@ -406,6 +581,50 @@ def home():
         message_history=current_history,
         connected_clients=get_client_count()
     )
+
+
+# ==================================================
+# 웹페이지 자동 업데이트용 API
+# ==================================================
+
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    with data_lock:
+        current_message = latest_message
+        current_time = latest_time
+
+        current_command = latest_command
+        current_command_time = (
+            latest_command_time
+        )
+
+        current_history = list(
+            reversed(message_history)
+        )
+
+    response = jsonify({
+        "latest_message": current_message,
+        "latest_time": current_time,
+        "latest_command": current_command,
+        "latest_command_time": (
+            current_command_time
+        ),
+        "message_history": current_history,
+        "connected_clients": (
+            get_client_count()
+        )
+    })
+
+    # 브라우저 캐시 때문에 이전 값이 표시되지 않도록 설정
+    response.headers["Cache-Control"] = (
+        "no-store, no-cache, must-revalidate, "
+        "max-age=0"
+    )
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+    return response
+
 
 # ==================================================
 # ESP32에서 올라오는 데이터 수신
@@ -448,6 +667,7 @@ def receive_data():
 
     return "OK", 200
 
+
 # ==================================================
 # 웹에서 ESP32로 명령 즉시 전송
 # ==================================================
@@ -481,11 +701,12 @@ def send_command():
     print("서버 명령 전송")
     print("시간:", send_time)
     print("명령:", command)
-    print("연결된 ESP32:", sent_count)
+    print("전송된 ESP32:", sent_count)
     print("끊어진 연결 제거:", removed_count)
     print("--------------------------------")
 
     return redirect(url_for("home"))
+
 
 # ==================================================
 # 실행
