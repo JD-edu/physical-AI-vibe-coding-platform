@@ -17,7 +17,7 @@ namespace esp32wifiuart {
         serial.redirect(
             SerialPin.P1,
             SerialPin.P2,
-            BaudRate.BaudRate9600
+            BaudRate.BaudRate115200
         )
 
         serial.setRxBufferSize(64)
