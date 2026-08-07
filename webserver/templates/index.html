@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>피지컬 AI Teachable Machine 템플릿</title>
+    <title>Teachable Machine 클론 (오류 수정 완료 버전)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
 
     <style>
         body {
@@ -25,7 +24,7 @@
             flex-wrap: wrap;
             gap: 20px;
             justify-content: center;
-            max-width: 900px;
+            max-width: 950px;
         }
         .card {
             background: white;
@@ -36,16 +35,16 @@
         }
         video {
             width: 100%;
-            max-width: 400px;
+            max-width: 360px;
             border-radius: 8px;
-            transform: scaleX(-1); /* 좌우 반전 */
+            transform: scaleX(-1);
             background-color: #000;
         }
         .btn {
             background-color: #4CAF50;
             color: white;
             border: none;
-            padding: 10px 18px;
+            padding: 10px 16px;
             margin: 5px;
             font-size: 14px;
             border-radius: 6px;
@@ -53,10 +52,11 @@
             transition: 0.2s;
         }
         .btn:hover { background-color: #45a049; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        .btn-train { background-color: #9c27b0; font-weight: bold; }
+        .btn-train:hover { background-color: #7b1fa2; }
         .btn-serial { background-color: #008CBA; }
-        .btn-serial:hover { background-color: #007399; }
         .btn-class { background-color: #ff9800; }
-        .btn-class:hover { background-color: #e68a00; }
         .status-box {
             margin-top: 15px;
             padding: 10px;
@@ -68,16 +68,30 @@
             font-size: 24px;
             color: #2196F3;
             margin-top: 10px;
+            font-weight: bold;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #ddd;
+            border-radius: 5px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            width: 0%;
+            height: 12px;
+            background-color: #9c27b0;
+            transition: width 0.1s;
         }
     </style>
 </head>
 <body>
 
-    <h1>🤖 Teachable Machine x 피지컬 AI 템플릿</h1>
+    <h1>🤖 Teachable Machine (MLP / FC Layer 방식)</h1>
 
     <div class="container">
         <div class="card">
-            <h3>1. 웹캠 & 데이터 학습</h3>
+            <h3>1. 데이터 수집</h3>
             <video id="webcam" autoplay playsinline muted></video>
             <div style="margin-top: 10px;">
                 <button class="btn btn-class" id="btn-add-a">클래스 A 수집 (0개)</button>
@@ -85,59 +99,73 @@
             </div>
         </div>
 
-        <div class="card" style="min-width: 300px;">
-            <h3>2. 교구 연결 & AI 추론</h3>
+        <div class="card" style="min-width: 320px;">
+            <h3>2. 신경망(MLP) 학습 & 추론</h3>
+            <button class="btn btn-train" id="btn-train-model" style="width: 90%;">🚀 MLP 모델 학습하기</button>
+            
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div id="train-status" style="font-size: 13px; color: #666; margin-top: 5px;">데이터를 수집한 뒤 학습 버튼을 누르세요.</div>
+
+            <hr style="margin: 20px 0; border: 0.5px solid #eee;">
+
             <button class="btn btn-serial" id="btn-connect-serial">마이크로비트/ESP32 연결</button>
             <div class="status-box" id="serial-status">연결 상태: 미연결</div>
-            
-            <hr style="margin: 20px 0; border: 0.5px solid #eee;">
-            
-            <h4>현재 감지된 결과</h4>
-            <div id="result-display">대기 중...</div>
+
+            <div id="result-display">학습 대기 중...</div>
             <div id="confidence-display" style="font-size: 14px; color: #666; margin-top: 5px;">신뢰도: 0%</div>
         </div>
     </div>
 
     <script>
-        // 변수 선언
         let webcamElement = document.getElementById('webcam');
-        let classifier;
         let mobilenetModel;
-        let isPredicting = false;
+        let customMlpModel;
         
+        let trainXs = [];
+        let trainYs = [];
         let countA = 0;
         let countB = 0;
 
-        // Web Serial API 관련 변수
+        let isPredicting = false;
+        let isTrained = false;
+
         let port;
         let writer;
 
-        // 1. 모델 및 웹캠 초기화
+        // 1. TF 백엔드 준비 후 모델 및 웹캠 로드 (백엔드 에러 방지 핵심)
         async function init() {
-            document.getElementById('result-display').innerText = "AI 모델 로딩 중...";
+            document.getElementById('result-display').innerText = "TF 백엔드 및 모델 초기화 중...";
             
-            // KNN Classifier 및 MobileNet 로드
-            classifier = knnClassifier.create();
+            // TensorFlow.js 엔진 준비 대기
+            await tf.ready();
+
+            // 사전 학습된 MobileNet 로드
             mobilenetModel = await mobilenet.load();
 
-            // 웹캠 권한 요청 및 연결
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 webcamElement.srcObject = stream;
-                document.getElementById('result-display').innerText = "학습 버튼을 눌러주세요";
+                document.getElementById('result-display').innerText = "데이터 수집 후 학습하세요";
             } catch (error) {
-                alert("웹캠에 접근할 수 없습니다. 권한을 확인해주세요.");
+                alert("웹캠을 활성화할 수 없습니다.");
                 console.error(error);
             }
         }
 
-        // 2. 클래스별 데이터 수집 함수
+        // 2. 샘플 데이터 수집 (안전한 텐서 메모리 추출 방식)
         function addExample(classId) {
             if (!mobilenetModel) return;
 
-            // 웹캠 이미지를 MobileNet Tensor로 변환 후 KNN 분류기에 추가
-            const logits = mobilenetModel.infer(webcamElement, 'conv_preds');
-            classifier.addExample(logits, classId);
+            // tf.tidy 내에서 return을 통해 생성된 텐서만 외부로 반환
+            const featureTensor = tf.tidy(() => {
+                const logits = mobilenetModel.infer(webcamElement, true);
+                return logits.clone(); // 백엔드 자동 삭제 방지를 위해 clone
+            });
+
+            trainXs.push(featureTensor);
+            trainYs.push(classId);
 
             if (classId === 0) {
                 countA++;
@@ -146,47 +174,106 @@
                 countB++;
                 document.getElementById('btn-add-b').innerText = `클래스 B 수집 (${countB}개)`;
             }
+        }
 
-            // 데이터가 입력되면 실시간 추론 시작
+        // 3. MLP 신경망 모델 구축 및 학습
+        async function trainMlpModel() {
+            if (trainXs.length === 0) {
+                alert("클래스 A와 B 데이터를 먼저 수집해 주세요!");
+                return;
+            }
+
+            document.getElementById('btn-train-model').disabled = true;
+            document.getElementById('train-status').innerText = "신경망 학습 시작...";
+
+            // 수집된 텐서 연결 및 원-핫 인코딩
+            const xDataset = tf.concat(trainXs);
+            const yDataset = tf.oneHot(tf.tensor1d(trainYs, 'int32'), 2);
+
+            // MLP 모델 구축
+            customMlpModel = tf.sequential();
+            customMlpModel.add(tf.layers.dense({
+                units: 100,
+                activation: 'relu',
+                inputShape: [xDataset.shape[1]]
+            }));
+            customMlpModel.add(tf.layers.dense({
+                units: 2,
+                activation: 'softmax'
+            }));
+
+            customMlpModel.compile({
+                optimizer: tf.train.adam(0.0001),
+                loss: 'categoricalCrossentropy',
+                metrics: ['accuracy']
+            });
+
+            const epochs = 20;
+            await customMlpModel.fit(xDataset, yDataset, {
+                epochs: epochs,
+                callbacks: {
+                    onEpochEnd: async (epoch, logs) => {
+                        const progress = Math.round(((epoch + 1) / epochs) * 100);
+                        document.getElementById('progress-fill').style.width = `${progress}%`;
+                        document.getElementById('train-status').innerText = 
+                            `학습 중... Epoch ${epoch + 1}/${epochs} (Loss: ${logs.loss.toFixed(4)})`;
+                        await tf.nextFrame(); // UI 렌더링 스레드 확보
+                    }
+                }
+            });
+
+            // 데이터셋 메모리 해제
+            xDataset.dispose();
+            yDataset.dispose();
+
+            document.getElementById('train-status').innerText = "학습 완료! 실시간 추론 중...";
+            isTrained = true;
+
             if (!isPredicting) {
                 isPredicting = true;
                 predictLoop();
             }
         }
 
-        // 3. 실시간 추론 루프
+        // 4. 실시간 추론 루프
         async function predictLoop() {
             while (isPredicting) {
-                if (classifier.getNumClasses() > 0) {
-                    const logits = mobilenetModel.infer(webcamElement, 'conv_preds');
-                    const result = await classifier.predictClass(logits);
+                if (isTrained && customMlpModel) {
+                    let predictedClass = -1;
+                    let confidence = 0;
 
-                    const classes = ['클래스 A', '클래스 B'];
-                    const label = classes[result.label];
-                    const confidence = Math.round(result.confidences[result.label] * 100);
+                    tf.tidy(() => {
+                        const featureVector = mobilenetModel.infer(webcamElement, true);
+                        const prediction = customMlpModel.predict(featureVector);
+                        const probabilities = prediction.dataSync();
 
-                    document.getElementById('result-display').innerText = label;
-                    document.getElementById('confidence-display').innerText = `신뢰도: ${confidence}%`;
+                        const classA_prob = probabilities[0];
+                        const classB_prob = probabilities[1];
 
-                    // 신뢰도가 70% 이상일 때만 시리얼 신호 전송
-                    if (confidence > 70) {
-                        if (result.label == 0) {
-                            sendSerialSignal('A');
-                        } else if (result.label == 1) {
-                            sendSerialSignal('B');
+                        predictedClass = classA_prob > classB_prob ? 0 : 1;
+                        confidence = Math.round(Math.max(classA_prob, classB_prob) * 100);
+                    });
+
+                    if (predictedClass !== -1) {
+                        const labels = ['클래스 A', '클래스 B'];
+                        document.getElementById('result-display').innerText = labels[predictedClass];
+                        document.getElementById('confidence-display').innerText = `신뢰도: ${confidence}%`;
+
+                        if (confidence > 70) {
+                            if (predictedClass === 0) sendSerialSignal('A');
+                            else if (predictedClass === 1) sendSerialSignal('B');
                         }
                     }
                 }
-                // 브라우저 과부하 방지를 위해 200ms 주기로 대기
+                
                 await tf.nextFrame();
                 await new Promise(resolve => setTimeout(resolve, 200));
             }
         }
 
-        // 4. Web Serial API 제어 함수
+        // 5. Web Serial API
         async function toggleSerialConnection() {
             if (port) {
-                // 연결 해제
                 if (writer) writer.releaseLock();
                 await port.close();
                 port = null;
@@ -195,10 +282,9 @@
                 document.getElementById('btn-connect-serial').innerText = "마이크로비트/ESP32 연결";
                 document.getElementById('serial-status').style.color = "black";
             } else {
-                // 시리얼 연결 요청
                 try {
                     port = await navigator.serial.requestPort();
-                    await port.open({ baudRate: 115200 }); // ESP32/micro:bit 통신 속도
+                    await port.open({ baudRate: 115200 });
                     
                     const textEncoder = new TextEncoderStream();
                     textEncoder.readable.pipeTo(port.writable);
@@ -209,29 +295,25 @@
                     document.getElementById('serial-status').style.color = "green";
                 } catch (err) {
                     console.error("시리얼 연결 실패:", err);
-                    alert("시리얼 포트 연결에 실패했거나 취소되었습니다.");
                 }
             }
         }
 
-        // 5. 시리얼 데이터 송신 함수 ('A' 또는 'B' 송신)
         async function sendSerialSignal(charSignal) {
             if (writer) {
                 try {
                     await writer.write(charSignal + "\n");
-                    console.log(`시리얼 전송 성공: ${charSignal}`);
                 } catch (err) {
                     console.error("시리얼 송신 에러:", err);
                 }
             }
         }
 
-        // Event Listener 바인딩
         document.getElementById('btn-add-a').addEventListener('click', () => addExample(0));
         document.getElementById('btn-add-b').addEventListener('click', () => addExample(1));
+        document.getElementById('btn-train-model').addEventListener('click', trainMlpModel);
         document.getElementById('btn-connect-serial').addEventListener('click', toggleSerialConnection);
 
-        // 페이지 로드 시 실행
         init();
     </script>
 </body>
