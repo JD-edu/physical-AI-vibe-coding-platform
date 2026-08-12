@@ -4,7 +4,6 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <esp_arduino_version.h>
 
 // ==================== OLED ====================
 const int OLED_SDA_PIN = 21;
@@ -27,29 +26,6 @@ const int COMMAND_PORT = 5001;
 const int RX2_PIN = 16;
 const int TX2_PIN = 17;
 const int MICROBIT_BAUD = 9600;
-
-// ==================== TB6612FNG 모터 ====================
-// 회로도 기준
-// STBY  -> GPIO5
-// PWMA  -> GPIO12
-// PWMB  -> GPIO13
-// AIN1  -> GPIO14
-// AIN2  -> GPIO15
-// BIN1  -> GPIO18
-// BIN2  -> GPIO19
-const int MOTOR_STBY_PIN = 5;
-const int MOTOR1_PWM_PIN = 12;
-const int MOTOR2_PWM_PIN = 13;
-const int MOTOR1_IN1_PIN = 14;
-const int MOTOR1_IN2_PIN = 15;
-const int MOTOR2_IN1_PIN = 18;
-const int MOTOR2_IN2_PIN = 19;
-
-const int MOTOR_PWM_FREQ = 20000;   // 20 kHz
-const int MOTOR_PWM_RESOLUTION = 8; // 0~255
-const int MOTOR1_PWM_CHANNEL = 0;
-const int MOTOR2_PWM_CHANNEL = 1;
-
 
 // ==================== 객체/설정 ====================
 Preferences preferences;
@@ -242,175 +218,12 @@ void sendToServer(const String& data) {
     else sendStatus("DATA_SEND_FAILED");
 }
 
-// ==================== 모터 제어 ====================
-void initializeMotors() {
-    pinMode(MOTOR_STBY_PIN, OUTPUT);
-    pinMode(MOTOR1_IN1_PIN, OUTPUT);
-    pinMode(MOTOR1_IN2_PIN, OUTPUT);
-    pinMode(MOTOR2_IN1_PIN, OUTPUT);
-    pinMode(MOTOR2_IN2_PIN, OUTPUT);
-
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcAttachChannel(MOTOR1_PWM_PIN, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION, MOTOR1_PWM_CHANNEL);
-    ledcAttachChannel(MOTOR2_PWM_PIN, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION, MOTOR2_PWM_CHANNEL);
-#else
-    ledcSetup(MOTOR1_PWM_CHANNEL, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION);
-    ledcSetup(MOTOR2_PWM_CHANNEL, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION);
-    ledcAttachPin(MOTOR1_PWM_PIN, MOTOR1_PWM_CHANNEL);
-    ledcAttachPin(MOTOR2_PWM_PIN, MOTOR2_PWM_CHANNEL);
-#endif
-
-    // 부팅 시에는 반드시 정지 상태
-    digitalWrite(MOTOR_STBY_PIN, LOW);
-    digitalWrite(MOTOR1_IN1_PIN, LOW);
-    digitalWrite(MOTOR1_IN2_PIN, LOW);
-    digitalWrite(MOTOR2_IN1_PIN, LOW);
-    digitalWrite(MOTOR2_IN2_PIN, LOW);
-
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcWriteChannel(MOTOR1_PWM_CHANNEL, 0);
-    ledcWriteChannel(MOTOR2_PWM_CHANNEL, 0);
-#else
-    ledcWrite(MOTOR1_PWM_CHANNEL, 0);
-    ledcWrite(MOTOR2_PWM_CHANNEL, 0);
-#endif
-}
-
-void writeMotorPWM(int motorNumber, int duty) {
-    duty = constrain(duty, 0, 255);
-
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    if (motorNumber == 1) {
-        ledcWriteChannel(MOTOR1_PWM_CHANNEL, duty);
-    } else if (motorNumber == 2) {
-        ledcWriteChannel(MOTOR2_PWM_CHANNEL, duty);
-    }
-#else
-    if (motorNumber == 1) {
-        ledcWrite(MOTOR1_PWM_CHANNEL, duty);
-    } else if (motorNumber == 2) {
-        ledcWrite(MOTOR2_PWM_CHANNEL, duty);
-    }
-#endif
-}
-
-// speed: -100 ~ +100
-// + : IN1=HIGH, IN2=LOW
-// - : IN1=LOW,  IN2=HIGH
-void setMotorSpeed(int motorNumber, int speed) {
-    speed = constrain(speed, -100, 100);
-
-    int in1Pin;
-    int in2Pin;
-
-    if (motorNumber == 1) {
-        in1Pin = MOTOR1_IN1_PIN;
-        in2Pin = MOTOR1_IN2_PIN;
-    } else if (motorNumber == 2) {
-        in1Pin = MOTOR2_IN1_PIN;
-        in2Pin = MOTOR2_IN2_PIN;
-    } else {
-        return;
-    }
-
-    if (speed == 0) {
-        digitalWrite(in1Pin, LOW);
-        digitalWrite(in2Pin, LOW);
-        writeMotorPWM(motorNumber, 0);
-        return;
-    }
-
-    digitalWrite(MOTOR_STBY_PIN, HIGH);
-
-    if (speed > 0) {
-        digitalWrite(in1Pin, HIGH);
-        digitalWrite(in2Pin, LOW);
-    } else {
-        digitalWrite(in1Pin, LOW);
-        digitalWrite(in2Pin, HIGH);
-    }
-
-    int duty = map(abs(speed), 0, 100, 0, 255);
-    writeMotorPWM(motorNumber, duty);
-}
-
-void stopAllMotors() {
-    writeMotorPWM(1, 0);
-    writeMotorPWM(2, 0);
-
-    digitalWrite(MOTOR1_IN1_PIN, LOW);
-    digitalWrite(MOTOR1_IN2_PIN, LOW);
-    digitalWrite(MOTOR2_IN1_PIN, LOW);
-    digitalWrite(MOTOR2_IN2_PIN, LOW);
-
-    // 두 모터가 모두 멈춘 뒤 드라이버를 Standby
-    digitalWrite(MOTOR_STBY_PIN, LOW);
-}
-
-// 형식:
-// MOTOR:1:<speed>       예) MOTOR:1:80
-// MOTOR:2:<speed>       예) MOTOR:2:-50
-// MOTOR:BOTH:<m1>,<m2>  예) MOTOR:BOTH:80,80
-// MOTOR:STOP
-bool processMotorCommand(const String& command) {
-    if (command == "MOTOR:STOP") {
-        stopAllMotors();
-        sendStatus("MOTOR_STOPPED");
-        return true;
-    }
-
-    if (command.startsWith("MOTOR:1:")) {
-        int speed = command.substring(8).toInt();
-        speed = constrain(speed, -100, 100);
-        setMotorSpeed(1, speed);
-        sendStatus("MOTOR1:" + String(speed));
-        return true;
-    }
-
-    if (command.startsWith("MOTOR:2:")) {
-        int speed = command.substring(8).toInt();
-        speed = constrain(speed, -100, 100);
-        setMotorSpeed(2, speed);
-        sendStatus("MOTOR2:" + String(speed));
-        return true;
-    }
-
-    if (command.startsWith("MOTOR:BOTH:")) {
-        String values = command.substring(11);
-        int commaIndex = values.indexOf(',');
-
-        if (commaIndex < 0) {
-            sendStatus("MOTOR_COMMAND_ERROR");
-            return true;
-        }
-
-        int speed1 = values.substring(0, commaIndex).toInt();
-        int speed2 = values.substring(commaIndex + 1).toInt();
-
-        speed1 = constrain(speed1, -100, 100);
-        speed2 = constrain(speed2, -100, 100);
-
-        setMotorSpeed(1, speed1);
-        setMotorSpeed(2, speed2);
-
-        sendStatus("MOTORS:" + String(speed1) + "," + String(speed2));
-        return true;
-    }
-
-    return false;
-}
-
 // ==================== micro:bit 명령 ====================
 void processMicrobitCommand(String command) {
     command.trim();
     if (command.length() == 0) return;
 
     Serial.println("micro:bit -> " + command);
-
-    // 모터 명령은 Wi-Fi 연결 여부와 관계없이 즉시 처리
-    if (processMotorCommand(command)) {
-        return;
-    }
 
     if (command == "MB_START") {
         microbitStarted = true;
@@ -463,7 +276,6 @@ void processMicrobitCommand(String command) {
     }
 
     if (command == "DISCONNECT") {
-        stopAllMotors();
         connectionEnabled = false;
         commandClient.stop();
         WiFi.disconnect(true);
@@ -474,7 +286,6 @@ void processMicrobitCommand(String command) {
     }
 
     if (command == "CLEAR") {
-        stopAllMotors();
         connectionEnabled = false;
         commandClient.stop();
         WiFi.disconnect(true);
@@ -539,7 +350,6 @@ void setup() {
     delay(200);
 
     initializeOLED();
-    initializeMotors();
 
     Serial2.begin(MICROBIT_BAUD, SERIAL_8N1, RX2_PIN, TX2_PIN);
     Serial2.setTimeout(100);
