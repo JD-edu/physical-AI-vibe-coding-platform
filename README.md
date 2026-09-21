@@ -1,82 +1,25 @@
-# micro:bit ESP32 WiFi UART
+# Physical AI Vibe Coding Platform
 
-micro:bit의 P1, P2 UART를 이용해 ESP32와 양방향 통신하는 MakeCode 확장입니다.
+바이브 코딩으로 AI 웹앱을 만들고, micro:bit와 ESP32를 통해 실제 장치를 제어하는 교육용 피지컬 AI 플랫폼입니다.
 
-## 주요 기능
-
-- P1 TX, P2 RX, 9600bps UART 시작
-- ESP32로 일반 문자열 전송
-- ESP32에 SSID와 비밀번호 전달
-- ESP32 Wi-Fi 연결 명령 전송
-- 서버에서 전달된 문자열 수신 이벤트
-- 마지막으로 받은 서버 문자열 반환
-- 수신 문자열 LED 표시
-
-## 배선
-
-| micro:bit | ESP32 DevKit V1 |
-|---|---|
-| P1 TX | GPIO16 RX2 |
-| P2 RX | GPIO17 TX2 |
-| GND | GND |
-
-## MakeCode 사용 예
-
-```typescript
-esp32wifiuart.start()
-
-esp32wifiuart.onServerMessage(function () {
-    basic.showString(
-        esp32wifiuart.serverMessage()
-    )
-})
-```
-
-Wi-Fi 설정:
-
-```typescript
-esp32wifiuart.setupWiFi(
-    "aicampus_286",
-    "aicampus286!!"
-)
-```
-
-서버로 문자열 보내기:
-
-```typescript
-esp32wifiuart.sendLine("Hello")
-```
-
-## GitHub에서 MakeCode 확장으로 추가
-
-1. 이 프로젝트를 GitHub 공개 저장소에 업로드합니다.
-2. MakeCode micro:bit에서 새 프로젝트를 만듭니다.
-3. `확장`을 선택합니다.
-4. 검색창에 GitHub 저장소 주소를 입력합니다.
-
-예:
+## 프로젝트 구성
 
 ```text
-https://github.com/사용자명/microbit-esp32-wifi-uart
+.
+├── physical/                 # 하드웨어 동작 및 통신
+│   ├── microbit/             # MakeCode 확장
+│   ├── esp32/                # ESP32 펌웨어
+│   └── bridge-server/        # 웹앱과 ESP32 사이의 통신 서버
+├── webapp/                   # 바이브 코딩으로 만들 AI 웹앱
+└── tutorials/                # 단계별 실습 자료
 ```
 
-## 새 버전 반영
+## 구성 요소의 역할
 
-`main.ts` 수정 후 GitHub에 커밋한 다음 릴리스 태그를 생성합니다.
+- `physical/microbit`: 블록 코딩 프로그램과 ESP32 사이의 UART 통신 및 모터 제어 명령을 담당합니다.
+- `physical/esp32`: Wi-Fi, 서버 통신, OLED 표시, TB6612FNG 모터 구동을 담당합니다.
+- `physical/bridge-server`: 웹 요청과 ESP32 TCP 연결을 중계하는 Flask 서버입니다.
+- `webapp`: 바이브 코딩으로 새 AI 웹페이지를 만드는 공간입니다. 현재는 비어 있습니다.
+- `tutorials`: 설치, 연결, AI 웹앱 제작 및 피지컬 장치 연동 과정을 문서화하는 공간입니다.
 
-예:
-
-```text
-v0.0.1
-v0.0.2
-```
-
-특정 버전을 직접 불러오려면:
-
-```text
-https://github.com/사용자명/microbit-esp32-wifi-uart#v0.0.2
-```
-
-## Supported targets
-
-* for PXT/microbit
+각 구성 요소의 실행 및 배선 방법은 해당 폴더의 README를 참고하세요.
